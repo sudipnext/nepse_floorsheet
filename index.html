@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEPSE Floorsheet Analytics Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/date-fns/2.29.3/index.min.js"></script>
+    <script src="available-dates.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .loader {
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .chart-container {
+            position: relative;
+            height: 400px;
+            width: 100%;
+        }
+        .table-container {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between items-center py-4">
+                <div class="flex items-center space-x-2">
+                    <i class="fas fa-chart-line text-blue-600 text-2xl"></i>
+                    <h1 class="text-2xl font-bold text-gray-900">NEPSE Floorsheet Analytics</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <select id="analysisMode" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <option value="single">Single Day</option>
+                        <option value="week">Last 7 Days</option>
+                        <option value="month">Last 30 Days</option>
+                        <option value="quarter">Last 3 Months</option>
+                        <option value="all">All Available Data</option>
+                        <option value="custom">Custom Range</option>
+                    </select>
+                    <select id="dateSelector" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <option value="">Select Date</option>
+                    </select>
+                    <div id="customDateRange" class="hidden flex items-center space-x-2">
+                        <input type="date" id="startDate" class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <span class="text-gray-500">to</span>
+                        <input type="date" id="endDate" class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    </div>
+                    <button id="refreshBtn" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-200">
+                        <i class="fas fa-sync-alt mr-2"></i>Analyze
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Loading Spinner -->
+    <div id="loadingSpinner" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white p-6 rounded-lg flex items-center space-x-4">
+            <div class="loader"></div>
+            <span class="text-lg">Loading floorsheet data...</span>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="max-w-7xl mx-auto px-4 py-8">
+        <!-- Summary Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500">Total Transactions</h3>
+                        <p id="totalTransactions" class="text-2xl font-bold text-gray-900">0</p>
+                        <p id="transactionsTrend" class="text-xs text-gray-400 mt-1">-</p>
+                    </div>
+                    <i class="fas fa-exchange-alt text-blue-600 text-2xl"></i>
+                </div>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500">Total Volume</h3>
+                        <p id="totalVolume" class="text-2xl font-bold text-gray-900">0</p>
+                        <p id="volumeTrend" class="text-xs text-gray-400 mt-1">-</p>
+                    </div>
+                    <i class="fas fa-coins text-green-600 text-2xl"></i>
+                </div>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500">Total Amount</h3>
+                        <p id="totalAmount" class="text-2xl font-bold text-gray-900">Rs. 0</p>
+                        <p id="amountTrend" class="text-xs text-gray-400 mt-1">-</p>
+                    </div>
+                    <i class="fas fa-money-bill text-yellow-600 text-2xl"></i>
+                </div>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500">Avg. Price</h3>
+                        <p id="avgPrice" class="text-2xl font-bold text-gray-900">Rs. 0</p>
+                        <p id="priceTrend" class="text-xs text-gray-400 mt-1">-</p>
+                    </div>
+                    <i class="fas fa-chart-line text-purple-600 text-2xl"></i>
+                </div>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500">Date Range</h3>
+                        <p id="dateRange" class="text-lg font-bold text-gray-900">-</p>
+                        <p id="daysCount" class="text-xs text-gray-400 mt-1">-</p>
+                    </div>
+                    <i class="fas fa-calendar text-indigo-600 text-2xl"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Section -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <!-- Price Trend Analysis -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Price Trend Analysis</h3>
+                <div class="chart-container">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- Daily Volume Distribution -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Daily Volume Distribution</h3>
+                <div class="chart-container">
+                    <canvas id="volumeTrendChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Advanced Analysis Section -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <!-- Top Symbols by Volume -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Top Symbols by Volume</h3>
+                <div class="chart-container">
+                    <canvas id="volumeChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- Top Symbols by Amount -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Top Symbols by Amount</h3>
+                <div class="chart-container">
+                    <canvas id="amountChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Average Price Analysis -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Average Price by Symbol</h3>
+                <div class="chart-container">
+                    <canvas id="avgPriceChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- New Required Visualizations Section -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+            <h2 class="text-xl font-bold text-gray-900 mb-6">Advanced Market Analysis</h2>
+            
+            <!-- Filter Controls -->
+            <div class="flex flex-wrap items-center gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
+                <div class="flex items-center space-x-2">
+                    <label for="symbolFilter" class="text-sm font-medium text-gray-700">Symbol:</label>
+                    <select id="symbolFilter" class="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <option value="">All Symbols</option>
+                    </select>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <label for="dateFilter" class="text-sm font-medium text-gray-700">Date:</label>
+                    <select id="dateFilter" class="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <option value="">All Dates</option>
+                    </select>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <label for="brokerFilter" class="text-sm font-medium text-gray-700">Broker:</label>
+                    <select id="brokerFilter" class="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <option value="">All Brokers</option>
+                    </select>
+                </div>
+                <button id="updateChartsBtn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition duration-200">
+                    <i class="fas fa-sync-alt mr-2"></i>Update Charts
+                </button>
+            </div>
+
+            <!-- Charts Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Line Chart: Average Price Over Time -->
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Average Trade Price Over Time</h3>
+                    <div class="chart-container">
+                        <canvas id="priceTimeChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Bar Chart: Broker Trading Volume -->
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Broker Trading Volume (Selected Date)</h3>
+                    <div class="chart-container">
+                        <canvas id="brokerVolumeChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Pie Chart: Broker Share by Amount -->
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Broker Share by Amount (Selected Symbol & Date)</h3>
+                    <div class="chart-container">
+                        <canvas id="brokerShareChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Scatter Plot: Quantity vs Price -->
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Quantity vs Price Relationship (Selected Date)</h3>
+                    <div class="chart-container">
+                        <canvas id="quantityPriceChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trading Relationships & Analysis -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <!-- Trading Network Analysis -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Top Trading Relationships</h3>
+                <div class="table-container">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Buyer → Seller</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trades</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Price</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tradingRelationshipsTable" class="bg-white divide-y divide-gray-200">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Symbol Performance Analysis -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Symbol Performance Summary</h3>
+                <div class="table-container">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Symbol</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trades</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Price</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price Trend</th>
+                            </tr>
+                        </thead>
+                        <tbody id="symbolPerformanceTable" class="bg-white divide-y divide-gray-200">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Brokers Section -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <!-- Top Buyers -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Top Buyers</h3>
+                <div class="table-container">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Buyer</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transactions</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Volume</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody id="topBuyersTable" class="bg-white divide-y divide-gray-200">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Top Sellers -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Top Sellers</h3>
+                <div class="table-container">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Seller</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transactions</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Volume</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody id="topSellersTable" class="bg-white divide-y divide-gray-200">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detailed Transactions Table -->
+        <div class="bg-white p-6 rounded-lg shadow-md">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold text-gray-900">Transaction Details</h3>
+                <div class="flex items-center space-x-4">
+                    <input type="text" id="searchInput" placeholder="Search symbol, buyer, seller..." 
+                           class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <button id="exportBtn" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition duration-200">
+                        <i class="fas fa-download mr-2"></i>Export CSV
+                    </button>
+                </div>
+            </div>
+            <div class="table-container">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onclick="sortTable('sn')">
+                                S.N. <i class="fas fa-sort ml-1"></i>
+                            </th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onclick="sortTable('transaction_no')">
+                                Transaction No. <i class="fas fa-sort ml-1"></i>
+                            </th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onclick="sortTable('symbol')">
+                                Symbol <i class="fas fa-sort ml-1"></i>
+                            </th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onclick="sortTable('buyer')">
+                                Buyer <i class="fas fa-sort ml-1"></i>
+                            </th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onclick="sortTable('seller')">
+                                Seller <i class="fas fa-sort ml-1"></i>
+                            </th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onclick="sortTable('quantity')">
+                                Quantity <i class="fas fa-sort ml-1"></i>
+                            </th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onclick="sortTable('rate')">
+                                Rate <i class="fas fa-sort ml-1"></i>
+                            </th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onclick="sortTable('amount')">
+                                Amount <i class="fas fa-sort ml-1"></i>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody id="transactionsTable" class="bg-white divide-y divide-gray-200">
+                    </tbody>
+                </table>
+            </div>
+            <div class="mt-4 flex justify-between items-center">
+                <div class="text-sm text-gray-500">
+                    Showing <span id="startRecord">0</span> to <span id="endRecord">0</span> of <span id="totalRecords">0</span> records
+                </div>
+                <div class="flex space-x-2">
+                    <button id="prevPage" class="px-3 py-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 transition duration-200" disabled>
+                        Previous
+                    </button>
+                    <span id="pageInfo" class="px-3 py-1 text-gray-700">Page 1</span>
+                    <button id="nextPage" class="px-3 py-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 transition duration-200" disabled>
+                        Next
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-gray-200 mt-12">
+        <div class="max-w-7xl mx-auto px-4 py-6">
+            <div class="text-center text-gray-500">
+                <p>&copy; 2025 NEPSE Floorsheet Analytics. Data sourced from NEPSE.</p>
+                <p class="text-sm mt-1">Last updated: <span id="lastUpdated">-</span></p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
