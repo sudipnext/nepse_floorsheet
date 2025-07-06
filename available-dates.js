@@ -1,7 +1,7 @@
 // This file lists all available CSV files in the floorsheet folder
 // Updated automatically by the Lambda function
 const AVAILABLE_DATES = [
-    "2025-07-05"
+    "2025-07-03"
 ];
 
 // Export for use in script.js
